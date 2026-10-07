@@ -160,18 +160,23 @@ export function stopLocalMedia() {
 function ensureRemoteVideoElement(peerId, stream, newTrack) {
   let box = document.getElementById(`box-${peerId}`);
   if (!box && videosContainer) {
-    box = document.createElement("figure");
+    box = document.createElement("div");
     box.id = `box-${peerId}`;
+    box.className = "video-card";
     box.innerHTML = `
       <video id="video-${peerId}" autoplay playsinline></video>
       <div id="ph-${peerId}" class="placeholder hidden">
-        <span class="avatar">👤</span>
-        <span class="status-badge">Camera Off</span>
+        <div class="avatar-glow">👤</div>
+        <span class="status-pill">Camera Off</span>
       </div>
-      <figcaption>
-        <span>${peerId.slice(0, 6)} <span id="badge-${peerId}">🎙️</span> <span id="hand-${peerId}" class="hidden">✋</span></span>
-        <span id="net-${peerId}" class="net-badge">📶 --</span>
-      </figcaption>
+      <div class="card-overlay">
+        <span class="peer-name">${peerId.slice(0, 6)}</span>
+        <div class="card-badges">
+          <span id="badge-${peerId}" class="badge-icon">🎙️</span>
+          <span id="hand-${peerId}" class="badge-icon hand-pulse hidden">✋</span>
+          <span id="net-${peerId}" class="net-pill">📶 --</span>
+        </div>
+      </div>
     `;
     videosContainer.appendChild(box);
   }
@@ -372,7 +377,7 @@ export function startStatsMonitor() {
         const badge = document.getElementById(`net-${peerId}`);
         if (badge && rtt !== null) {
           badge.textContent = `📶 ${rtt}ms`;
-          badge.className = "net-badge";
+          badge.className = "net-pill";
           if (rtt > 150) badge.classList.add("bad");
           else if (rtt > 80) badge.classList.add("warn");
         }

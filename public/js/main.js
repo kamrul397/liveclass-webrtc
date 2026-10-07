@@ -160,9 +160,11 @@ $("joinBtn").onclick = async () => {
           if (data.isRaised) log(`✋ ${data.sender} হাত তুলেছে! (Question)`);
         } else if (data.type === "draw") {
           // অপর প্রান্ত থেকে ড্রয়িং ডাটা আসলে ক্যানভাসে আঁকা
-          drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, false);
+          drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width, false);
         } else if (data.type === "clear-whiteboard") {
           clearCanvas(false);
+        } else if (data.type === "restore-whiteboard") {
+          restoreState(data.dataUrl);
         }
       },
     });
@@ -188,7 +190,10 @@ $("joinBtn").onclick = async () => {
 // ✋ Raise Hand Toggle
 $("handBtn").onclick = () => {
   isHandRaised = !isHandRaised;
-  $("handBtn").textContent = isHandRaised ? "✋ Hand Raised" : "✋ Raise Hand";
+  $("handBtn").innerHTML = isHandRaised 
+    ? `<i class="fa-solid fa-hand"></i><span>Raised</span>` 
+    : `<i class="fa-solid fa-hand"></i><span>Hand</span>`;
+  $("handBtn").classList.toggle("active-off", isHandRaised);
   $("localHandBadge").classList.toggle("hidden", !isHandRaised);
 
   // ক্লাসের সবার কাছে P2P DataChannel-এ হাত তোলার মেসেজ পাঠাই
@@ -198,6 +203,11 @@ $("handBtn").onclick = () => {
     isRaised: isHandRaised,
   });
   log(isHandRaised ? "আপনি ক্লাসে হাত তুলেছেন ✋" : "হাত নামিয়েছেন");
+};
+
+// 📱 Mobile Sidebar Drawer Toggle
+$("sidebarToggleBtn").onclick = () => {
+  $("callSidebar").classList.toggle("open");
 };
 
 // 💬 Tab Switching (Participants vs Chat)
@@ -253,7 +263,7 @@ function escapeHtml(str) {
 }
 
 // ---------------------------------------------------------------------
-// 🎨 Collaborative Whiteboard Logic (P2P Canvas Sync)
+// 🎨 Collaborative Whiteboard Logic (Pen, Eraser, Undo, Redo)
 // ---------------------------------------------------------------------
 
 const canvas = $("wbCanvas");
@@ -261,61 +271,194 @@ const ctx = canvas ? canvas.getContext("2d") : null;
 let isDrawing = false;
 let lastX = 0;
 let lastY = 0;
+let currentTool = "pen"; // "pen" or "eraser"
+
+// হিস্ট্রি স্ট্যাক (Undo / Redo এর জন্য)
+const undoStack = [];
+const redoStack = [];
+const MAX_HISTORY = 20;
+
+function saveState() {
+  if (!ctx || !canvas) return;
+  if (undoStack.length >= MAX_HISTORY) undoStack.shift();
+  undoStack.push(canvas.toDataURL());
+  redoStack.length = 0; // নতুন ড্র করলে রিডু স্ট্যাক খালি হয়
+}
+
+function restoreState(dataUrl) {
+  if (!ctx || !canvas) return;
+  const img = new Image();
+  img.src = dataUrl;
+  img.onload = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+  };
+}
+
+function resizeCanvas() {
+  if (!canvas) return;
+  const container = canvas.parentElement;
+  if (container && container.clientWidth > 0) {
+    const temp = ctx ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    if (temp && ctx) ctx.putImageData(temp, 0, 0);
+    else saveState(); // প্রাথমিক ফাঁকা স্টেট সেভ
+  }
+}
+
+// 🖊️ টুল সিলেকশন: Pen বনাম Eraser
+$("wbPenBtn").onclick = () => {
+  currentTool = "pen";
+  $("wbPenBtn").classList.add("active");
+  $("wbEraserBtn").classList.remove("active");
+};
+
+$("wbEraserBtn").onclick = () => {
+  currentTool = "eraser";
+  $("wbEraserBtn").classList.add("active");
+  $("wbPenBtn").classList.remove("active");
+};
+
+// ↩️ Undo
+$("wbUndoBtn").onclick = () => {
+  if (undoStack.length > 1) {
+    const current = undoStack.pop();
+    redoStack.push(current);
+    const prev = undoStack[undoStack.length - 1];
+    restoreState(prev);
+
+    // সবার স্ক্রিনে Undo সিঙ্ক করা
+    peer.broadcastDataMessage({ type: "restore-whiteboard", dataUrl: prev });
+  }
+};
+
+// ↪️ Redo
+$("wbRedoBtn").onclick = () => {
+  if (redoStack.length > 0) {
+    const next = redoStack.pop();
+    undoStack.push(next);
+    restoreState(next);
+
+    // সবার স্ক্রিনে Redo সিঙ্ক করা
+    peer.broadcastDataMessage({ type: "restore-whiteboard", dataUrl: next });
+  }
+};
 
 $("boardBtn").onclick = () => {
   const isHidden = $("whiteboardSection").classList.toggle("hidden");
-  $("boardBtn").textContent = isHidden ? "🎨 Whiteboard" : "🎨 Hide Board";
+  $("boardBtn").innerHTML = isHidden 
+    ? `<i class="fa-solid fa-chalkboard"></i><span>Board</span>` 
+    : `<i class="fa-solid fa-xmark"></i><span>Hide</span>`;
+  $("boardBtn").classList.toggle("active-off", !isHidden);
+  if (!isHidden) {
+    setTimeout(resizeCanvas, 50);
+  }
 };
 
 $("wbCloseBtn").onclick = () => {
   $("whiteboardSection").classList.add("hidden");
-  $("boardBtn").textContent = "🎨 Whiteboard";
+  $("boardBtn").innerHTML = `<i class="fa-solid fa-chalkboard"></i><span>Board</span>`;
+  $("boardBtn").classList.remove("active-off");
 };
 
 $("wbClearBtn").onclick = () => {
   clearCanvas(true);
 };
 
+window.addEventListener("resize", () => {
+  if (!$("whiteboardSection").classList.contains("hidden")) {
+    resizeCanvas();
+  }
+});
+
+function getCanvasCoordinates(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY,
+  };
+}
+
 if (canvas) {
+  // মাউস ইভেন্ট (পিসি)
   canvas.addEventListener("mousedown", (e) => {
     isDrawing = true;
-    const rect = canvas.getBoundingClientRect();
-    lastX = e.clientX - rect.left;
-    lastY = e.clientY - rect.top;
+    const coords = getCanvasCoordinates(e);
+    lastX = coords.x;
+    lastY = coords.y;
   });
 
   canvas.addEventListener("mousemove", (e) => {
     if (!isDrawing) return;
-    const rect = canvas.getBoundingClientRect();
-    const currX = e.clientX - rect.left;
-    const currY = e.clientY - rect.top;
-    const color = $("wbColor").value;
+    const coords = getCanvasCoordinates(e);
+    const color = currentTool === "eraser" ? "#030712" : $("wbColor").value;
+    const width = currentTool === "eraser" ? 24 : 3;
 
-    // ১. নিজের ক্যানভাসে আঁকা
-    drawOnCanvas(lastX, lastY, currX, currY, color, true);
+    drawOnCanvas(lastX, lastY, coords.x, coords.y, color, width, true);
 
-    lastX = currX;
-    lastY = currY;
+    lastX = coords.x;
+    lastY = coords.y;
   });
 
-  window.addEventListener("mouseup", () => (isDrawing = false));
+  window.addEventListener("mouseup", () => {
+    if (isDrawing) {
+      isDrawing = false;
+      saveState();
+    }
+  });
+
+  // টাচ ইভেন্ট (মোবাইল)
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    isDrawing = true;
+    const coords = getCanvasCoordinates(e);
+    lastX = coords.x;
+    lastY = coords.y;
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const coords = getCanvasCoordinates(e);
+    const color = currentTool === "eraser" ? "#030712" : $("wbColor").value;
+    const width = currentTool === "eraser" ? 24 : 3;
+
+    drawOnCanvas(lastX, lastY, coords.x, coords.y, color, width, true);
+
+    lastX = coords.x;
+    lastY = coords.y;
+  }, { passive: false });
+
+  window.addEventListener("touchend", () => {
+    if (isDrawing) {
+      isDrawing = false;
+      saveState();
+    }
+  });
 }
 
-function drawOnCanvas(x0, y0, x1, y1, color, shouldBroadcast) {
+function drawOnCanvas(x0, y0, x1, y1, color, width, shouldBroadcast) {
   if (!ctx) return;
   ctx.beginPath();
   ctx.moveTo(x0, y0);
   ctx.lineTo(x1, y1);
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = width || 3;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.stroke();
 
-  // যদি আমি আঁকি, তাহলে P2P DataChannel দিয়ে সবার ক্যানভাসে পাঠিয়ে দাও
   if (shouldBroadcast) {
     peer.broadcastDataMessage({
       type: "draw",
-      x0, y0, x1, y1, color,
+      x0, y0, x1, y1, color, width,
     });
   }
 }
@@ -323,6 +466,7 @@ function drawOnCanvas(x0, y0, x1, y1, color, shouldBroadcast) {
 function clearCanvas(shouldBroadcast) {
   if (!ctx || !canvas) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  saveState();
   if (shouldBroadcast) {
     peer.broadcastDataMessage({ type: "clear-whiteboard" });
     log("হোয়াইটবোর্ড ক্লিয়ার করা হয়েছে 🧹");
@@ -332,21 +476,30 @@ function clearCanvas(shouldBroadcast) {
 
 $("micBtn").onclick = async () => {
   const isUnmuted = await peer.toggleAudio();
-  $("micBtn").textContent = isUnmuted ? "🎙️ Mic On" : "🔇 Mic Off";
+  $("micBtn").innerHTML = isUnmuted 
+    ? `<i class="fa-solid fa-microphone"></i><span>Mic</span>` 
+    : `<i class="fa-solid fa-microphone-slash"></i><span>Muted</span>`;
+  $("micBtn").classList.toggle("active-off", !isUnmuted);
   $("localAudioBadge").textContent = isUnmuted ? "🎙️" : "🔇";
   broadcastMediaState({ isAudioOn: isUnmuted });
 };
 
 $("camBtn").onclick = async () => {
   const isVideoOn = await peer.toggleVideo();
-  $("camBtn").textContent = isVideoOn ? "📷 Cam On" : "🚫 Cam Off";
+  $("camBtn").innerHTML = isVideoOn 
+    ? `<i class="fa-solid fa-video"></i><span>Cam</span>` 
+    : `<i class="fa-solid fa-video-slash"></i><span>Off</span>`;
+  $("camBtn").classList.toggle("active-off", !isVideoOn);
   $("localPlaceholder").classList.toggle("hidden", isVideoOn);
   broadcastMediaState({ isVideoOn });
 };
 
 $("shareBtn").onclick = async () => {
   const isSharing = await peer.toggleScreenShare();
-  $("shareBtn").textContent = isSharing ? "🛑 Stop Share" : "🖥️ Share Screen";
+  $("shareBtn").innerHTML = isSharing 
+    ? `<i class="fa-solid fa-stop"></i><span>Stop</span>` 
+    : `<i class="fa-solid fa-display"></i><span>Share</span>`;
+  $("shareBtn").classList.toggle("active-off", isSharing);
 };
 
 $("leaveBtn").onclick = () => {
@@ -381,7 +534,7 @@ function renderParticipants() {
   for (const [id, user] of participants.entries()) {
     const isMe = id === myId;
     const li = document.createElement("li");
-    li.className = "participant-item";
+    li.className = "user-item";
 
     let actions = "";
     // শুধু Teacher (Host) অন্য ছাত্রদের Mute বা Kick করার বাটন দেখতে পাবে!
