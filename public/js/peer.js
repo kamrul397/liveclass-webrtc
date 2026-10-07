@@ -13,6 +13,9 @@ const dataChannels = new Map();
 
 let onDataChannelMessage = null;
 
+let localVideoEl = null;
+const videoSenders = new Map(); // peerId -> RTCRtpSender
+
 let isAudioRunning = true;
 let isVideoRunning = true;
 let isScreenSharing = false;
@@ -22,6 +25,7 @@ export async function init(options) {
   videosContainer = options.videosContainer;
   sendSignal = options.sendSignal;
   onDataChannelMessage = options.onDataChannelMessage;
+  localVideoEl = options.localVideo;
 
   // ক্যামেরা এবং মাইক ক্যাপচার
   localStream = await navigator.mediaDevices.getUserMedia({
@@ -29,7 +33,7 @@ export async function init(options) {
     audio: true,
   });
 
-  options.localVideo.srcObject = localStream;
+  localVideoEl.srcObject = localStream;
   const tracks = localStream.getTracks();
   log(`Captured ${tracks.length} tracks: ${tracks.map((t) => t.kind).join(", ")}`);
 }
@@ -54,10 +58,13 @@ export function getOrCreatePeerConnection(peerId) {
     setupDataChannel(peerId, event.channel);
   };
 
-  // নিজের অডিও ও ভিডিও ট্র্যাক যুক্ত করা
+  // নিজের অডিও ও ভিডিও ট্র্যাক যুক্ত করা এবং সেন্ডার রেফারেন্স সেভ রাখা
   if (localStream) {
     for (const track of localStream.getTracks()) {
-      pc.addTrack(track, localStream);
+      const sender = pc.addTrack(track, localStream);
+      if (track.kind === "video") {
+        videoSenders.set(peerId, sender);
+      }
     }
   }
 
@@ -239,32 +246,55 @@ export async function toggleAudio() {
 }
 
 export async function toggleVideo() {
-  const videoTrack = localStream?.getVideoTracks()[0];
-  if (!videoTrack && isVideoRunning) return false;
-
   if (isVideoRunning) {
-    videoTrack.stop();
-    for (const pc of peers.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    // 🛑 ১. ক্যামেরা বন্ধ করা (Hardware release)
+    const videoTrack = localStream?.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.stop();
+      localStream.removeTrack(videoTrack);
+    }
+
+    // সব পিয়ারের সেন্ডারকে null করে দেওয়া
+    for (const [peerId, pc] of peers.entries()) {
+      const sender = videoSenders.get(peerId) || pc.getSenders().find((s) => s.track === null || s.track?.kind === "video");
       if (sender) await sender.replaceTrack(null);
     }
+
+    if (localVideoEl) localVideoEl.srcObject = null;
     isVideoRunning = false;
     log("ক্যামেরা হার্ডওয়্যার অফ 🛑");
     return false;
   } else {
+    // 📷 ২. নতুন করে ক্যামেরা চালু করা
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
       const newVideoTrack = newStream.getVideoTracks()[0];
-      localStream.addTrack(newVideoTrack);
 
-      for (const pc of peers.values()) {
-        const sender = pc.getSenders().find((s) => s.track === null || s.track?.kind === "video");
-        if (sender) await sender.replaceTrack(newVideoTrack);
+      if (localStream) {
+        localStream.addTrack(newVideoTrack);
+      } else {
+        localStream = newStream;
       }
+
+      // লোকাল প্রিভিউ রি-অ্যাটাচ ও প্লে করা
+      if (localVideoEl) {
+        localVideoEl.srcObject = new MediaStream([newVideoTrack]);
+        localVideoEl.play().catch(() => {});
+      }
+
+      // প্রতিটি পিয়ারের ভিডিও লাইনে নতুন ট্র্যাক প্লাগ-ইন করা
+      for (const [peerId, pc] of peers.entries()) {
+        const sender = videoSenders.get(peerId) || pc.getSenders().find((s) => s.track === null || s.track?.kind === "video");
+        if (sender) {
+          await sender.replaceTrack(newVideoTrack);
+        }
+      }
+
       isVideoRunning = true;
       log("ক্যামেরা হার্ডওয়্যার অন 📷");
       return true;
     } catch (err) {
+      log(`ক্যামেরা চালু করতে ব্যর্থ: ${err.message}`, "err");
       return false;
     }
   }

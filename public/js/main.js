@@ -23,6 +23,44 @@ let myRole = "student"; // "host" or "student"
 let myId = null;
 let participants = new Map(); // id -> { name, role }
 
+// 🔗 URL থেকে রুম ও নামের প্যারামিটার রিড করা (যেমন: ?room=physics202&name=Rahim)
+const urlParams = new URLSearchParams(window.location.search);
+const roomParam = urlParams.get("room");
+const nameParam = urlParams.get("name");
+
+if (nameParam) {
+  $("nameInput").value = nameParam;
+}
+
+if (roomParam) {
+  $("roomInput").value = roomParam;
+  log(`ইনভাইট লিঙ্ক থেকে রুম লোড হয়েছে: ${roomParam} 🔗`);
+}
+
+// 🔗 ইনভাইট লিঙ্ক ক্লিপবোর্ডে কপি করার ফাংশন
+async function copyRoomLink(btn) {
+  const room = $("roomInput").value.trim() || "math101";
+  const inviteUrl = `${window.location.origin}/?room=${encodeURIComponent(room)}`;
+
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<i class="fa-solid fa-check"></i> <span>Copied!</span>`;
+    log(`রুম লিঙ্ক কপি হয়েছে: ${inviteUrl} 📋`);
+
+    setTimeout(() => {
+      btn.innerHTML = originalHtml;
+    }, 2000);
+  } catch (err) {
+    prompt("Copy this invite link manually:", inviteUrl);
+  }
+}
+
+$("copyLinkBtn").onclick = () => copyRoomLink($("copyLinkBtn"));
+if ($("dockShareBtn")) {
+  $("dockShareBtn").onclick = () => copyRoomLink($("dockShareBtn"));
+}
+
 // ---------- signaling adapter ----------
 const signaling = createSignaling({
   log,
@@ -64,7 +102,11 @@ const signaling = createSignaling({
     if (data.type === "media-state") {
       const ph = document.getElementById(`ph-${from}`);
       const bd = document.getElementById(`badge-${from}`);
-      if (ph && typeof data.isVideoOn === "boolean") ph.classList.toggle("hidden", data.isVideoOn);
+      const vid = document.getElementById(`video-${from}`);
+      if (ph && typeof data.isVideoOn === "boolean") {
+        ph.classList.toggle("hidden", data.isVideoOn);
+        if (data.isVideoOn && vid) vid.play().catch(() => {});
+      }
       if (bd && typeof data.isAudioOn === "boolean") bd.textContent = data.isAudioOn ? "🎙️" : "🔇";
       return;
     }
@@ -139,8 +181,7 @@ const signaling = createSignaling({
 
 let isHandRaised = false;
 
-// ---------- UI Controls ----------
-$("joinBtn").onclick = async () => {
+async function joinRoom() {
   const roomId = $("roomInput").value.trim();
   const userName = $("nameInput").value.trim() || "Student";
   if (!roomId) return alert("Enter a room name");
@@ -185,7 +226,18 @@ $("joinBtn").onclick = async () => {
   } catch (err) {
     log(`Error: ${err.message}`, "err");
   }
-};
+}
+
+$("joinBtn").onclick = joinRoom;
+
+// 🔗 যদি ইউজার ইনভাইট লিঙ্ক দিয়ে আসে (?room=xyz), সরাসরি জয়েন হয়ে লবিতে ঢুকবে!
+if (roomParam) {
+  log("ইনভাইট লিঙ্ক দিয়ে জয়েন করা হচ্ছে... অটো-কানেক্টিং 🚀");
+  // ব্রাউজার যাতে পেজ রেন্ডার হওয়ার সাথে সাথে পারমিশন চাইতে পারে
+  setTimeout(() => {
+    joinRoom();
+  }, 300);
+}
 
 // ✋ Raise Hand Toggle
 $("handBtn").onclick = () => {

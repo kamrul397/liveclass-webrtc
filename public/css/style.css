@@ -137,6 +137,23 @@ body {
   background: var(--primary-hover);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-copy {
+  background: #1e293b;
+  border: 1px solid var(--border-color);
+  color: #38bdf8;
+}
+
+.btn-copy:hover {
+  background: #334155;
+  border-color: #38bdf8;
+}
+
 .icon-btn {
   background: transparent;
   border: 1px solid var(--border-color);
