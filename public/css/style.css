@@ -806,59 +806,159 @@ body {
   display: none !important;
 }
 
-/* ---------------- 📱 Mobile Responsive Rules ---------------- */
+/* ---------------- 📱 Mobile Responsive Rules (Ultra-Fit for Phones) ---------------- */
 @media (max-width: 768px) {
+  :root {
+    --dock-height: 65px;
+  }
+
+  body {
+    height: 100dvh; /* Mobile dynamic viewport */
+  }
+
   .app-header {
+    height: 52px;
     padding: 0 10px;
+    gap: 8px;
+  }
+
+  .brand-name {
+    font-size: 1rem;
+  }
+
+  /* জয়েন ইনপুট মোবাইলে স্ক্রিনের অতিরিক্ত জায়গা যেন না খায় */
+  .join-controls {
+    flex: 1;
+    justify-content: flex-end;
+    gap: 4px;
   }
 
   .input-group input {
-    width: 90px;
+    width: 80px;
+    padding: 5px 8px 5px 24px;
+    font-size: 0.75rem;
+  }
+
+  .input-group i {
+    left: 7px;
+    font-size: 0.7rem;
   }
 
   .input-group input:focus {
-    width: 100px;
+    width: 85px;
+  }
+
+  .btn-primary {
+    padding: 5px 8px;
+    font-size: 0.75rem;
+  }
+
+  /* কল চলাকালীন জয়েন কন্ট্রোল হাইড করে হেডার পরিষ্কার রাখা */
+  .in-call .join-controls {
+    display: none;
+  }
+
+  .btn-copy span {
+    display: none; /* মোবাইলে শুধু আইকন */
   }
 
   .app-container {
     grid-template-columns: 1fr;
+    height: calc(100dvh - 52px - var(--dock-height));
   }
 
+  .stage {
+    padding: 6px;
+    align-items: stretch;
+  }
+
+  /* মোবাইলে ভিডিও গ্রিড ফিট */
+  .videos-grid {
+    gap: 8px;
+    grid-template-columns: 1fr;
+    align-content: stretch;
+  }
+
+  .videos-grid:has(> :only-child) .video-card {
+    max-width: 100%;
+    max-height: 100%;
+    height: 100%;
+    aspect-ratio: auto; /* মোবাইলের পুরো স্ক্রিন দখল করবে */
+  }
+
+  .video-card {
+    border-radius: 12px;
+    aspect-ratio: 16 / 9;
+    min-height: 180px;
+  }
+
+  .avatar-glow {
+    width: 50px;
+    height: 50px;
+    font-size: 1.5rem;
+  }
+
+  /* সাইডবার মোবাইলে ফুল ড্রয়ার */
   .call-sidebar {
     position: fixed;
     right: 0;
-    top: 60px;
+    top: 52px;
     bottom: var(--dock-height);
-    width: 85%;
-    max-width: 320px;
-    z-index: 30;
-    box-shadow: -10px 0 25px rgba(0, 0, 0, 0.7);
+    width: 100%;
+    max-width: 100%;
+    z-index: 50;
+    box-shadow: none;
     transform: translateX(100%);
+    background: #0f172a;
   }
 
   .call-sidebar.open {
     transform: translateX(0);
   }
 
+  /* নিচের ভাসমান ডক মোবাইলে পারফেক্ট স্ক্রলিং বা ফিট */
+  .bottom-dock {
+    height: var(--dock-height);
+    padding: 0 4px;
+  }
+
   .dock-container {
-    gap: 8px;
+    gap: 6px;
+    width: 100%;
+    justify-content: space-around;
   }
 
   .dock-btn {
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    gap: 0;
   }
 
   .dock-btn i {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
-  .videos-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
+  .dock-btn span {
+    display: none; /* মোবাইলে বাটন লেবেল লুকিয়ে বাটন ছোট রাখা */
   }
 
-  .stage {
-    padding: 8px;
+  .dock-btn.btn-leave {
+    width: 50px;
+  }
+
+  /* মোবাইলে হোয়াইটবোর্ড ফুল স্ক্রিন ফিট */
+  .whiteboard-modal {
+    inset: 4px;
+    border-radius: 10px;
+  }
+
+  .wb-bar {
+    padding: 6px 10px;
+  }
+
+  .btn-tool {
+    padding: 4px 8px;
+    font-size: 0.7rem;
   }
 }

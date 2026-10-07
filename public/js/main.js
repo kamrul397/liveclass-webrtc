@@ -215,6 +215,7 @@ async function joinRoom() {
 
     // নেটওয়ার্ক কোয়ালিটি মনিটর শুরু
     peer.startStatsMonitor();
+    document.body.classList.add("in-call");
 
     $("joinBtn").disabled = true;
     $("leaveBtn").disabled = false;
