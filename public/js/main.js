@@ -137,6 +137,8 @@ const signaling = createSignaling({
   onRoomFull: () => alert("Class is full (maximum capacity reached)"),
 });
 
+let isHandRaised = false;
+
 // ---------- UI Controls ----------
 $("joinBtn").onclick = async () => {
   const roomId = $("roomInput").value.trim();
@@ -148,20 +150,185 @@ $("joinBtn").onclick = async () => {
       localVideo: $("localVideo"),
       videosContainer: $("videosGrid"),
       sendSignal: signaling.sendSignal,
+      // পিয়ার থেকে ডাটা চ্যানেলে মেসেজ আসলে এখানে হ্যান্ডেল হবে
+      onDataChannelMessage: (fromPeerId, data) => {
+        if (data.type === "chat") {
+          appendChatMessage(data.sender, data.text, false);
+        } else if (data.type === "raise-hand") {
+          const handBadge = document.getElementById(`hand-${fromPeerId}`);
+          if (handBadge) handBadge.classList.toggle("hidden", !data.isRaised);
+          if (data.isRaised) log(`✋ ${data.sender} হাত তুলেছে! (Question)`);
+        } else if (data.type === "draw") {
+          // অপর প্রান্ত থেকে ড্রয়িং ডাটা আসলে ক্যানভাসে আঁকা
+          drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, false);
+        } else if (data.type === "clear-whiteboard") {
+          clearCanvas(false);
+        }
+      },
     });
 
     await signaling.connect();
     signaling.join(roomId, userName);
+
+    // নেটওয়ার্ক কোয়ালিটি মনিটর শুরু
+    peer.startStatsMonitor();
 
     $("joinBtn").disabled = true;
     $("leaveBtn").disabled = false;
     $("micBtn").disabled = false;
     $("camBtn").disabled = false;
     $("shareBtn").disabled = false;
+    $("boardBtn").disabled = false;
+    $("handBtn").disabled = false;
   } catch (err) {
     log(`Error: ${err.message}`, "err");
   }
 };
+
+// ✋ Raise Hand Toggle
+$("handBtn").onclick = () => {
+  isHandRaised = !isHandRaised;
+  $("handBtn").textContent = isHandRaised ? "✋ Hand Raised" : "✋ Raise Hand";
+  $("localHandBadge").classList.toggle("hidden", !isHandRaised);
+
+  // ক্লাসের সবার কাছে P2P DataChannel-এ হাত তোলার মেসেজ পাঠাই
+  peer.broadcastDataMessage({
+    type: "raise-hand",
+    sender: $("nameInput").value.trim() || "Student",
+    isRaised: isHandRaised,
+  });
+  log(isHandRaised ? "আপনি ক্লাসে হাত তুলেছেন ✋" : "হাত নামিয়েছেন");
+};
+
+// 💬 Tab Switching (Participants vs Chat)
+$("tabParticipants").onclick = () => {
+  $("tabParticipants").classList.add("active");
+  $("tabChat").classList.remove("active");
+  $("participantsPanel").classList.remove("hidden");
+  $("chatPanel").classList.add("hidden");
+};
+
+$("tabChat").onclick = () => {
+  $("tabChat").classList.add("active");
+  $("tabParticipants").classList.remove("active");
+  $("chatPanel").classList.remove("hidden");
+  $("participantsPanel").classList.add("hidden");
+  $("chatInput").focus();
+};
+
+// 💬 Chat Form Submit (Send P2P Message)
+$("chatForm").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("chatInput").value.trim();
+  if (!text) return;
+
+  const senderName = $("nameInput").value.trim() || "User";
+
+  // ১. সরাসরি ক্লাসের সবার কাছে DataChannel-এ পাঠিয়ে দেওয়া (No Server!)
+  peer.broadcastDataMessage({
+    type: "chat",
+    sender: senderName,
+    text,
+  });
+
+  // ২. নিজের চ্যাট বক্সে মেসেজ দেখানো
+  appendChatMessage("You", text, true);
+  $("chatInput").value = "";
+};
+
+function appendChatMessage(sender, text, isMine) {
+  const bubble = document.createElement("div");
+  bubble.className = `chat-bubble ${isMine ? "mine" : ""}`;
+  bubble.innerHTML = `
+    <div class="sender">${sender}</div>
+    <div class="text">${escapeHtml(text)}</div>
+  `;
+  $("chatMessages").appendChild(bubble);
+  $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+}
+
+function escapeHtml(str) {
+  return str.replace(/[&<>'"]/g, 
+    (tag) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+}
+
+// ---------------------------------------------------------------------
+// 🎨 Collaborative Whiteboard Logic (P2P Canvas Sync)
+// ---------------------------------------------------------------------
+
+const canvas = $("wbCanvas");
+const ctx = canvas ? canvas.getContext("2d") : null;
+let isDrawing = false;
+let lastX = 0;
+let lastY = 0;
+
+$("boardBtn").onclick = () => {
+  const isHidden = $("whiteboardSection").classList.toggle("hidden");
+  $("boardBtn").textContent = isHidden ? "🎨 Whiteboard" : "🎨 Hide Board";
+};
+
+$("wbCloseBtn").onclick = () => {
+  $("whiteboardSection").classList.add("hidden");
+  $("boardBtn").textContent = "🎨 Whiteboard";
+};
+
+$("wbClearBtn").onclick = () => {
+  clearCanvas(true);
+};
+
+if (canvas) {
+  canvas.addEventListener("mousedown", (e) => {
+    isDrawing = true;
+    const rect = canvas.getBoundingClientRect();
+    lastX = e.clientX - rect.left;
+    lastY = e.clientY - rect.top;
+  });
+
+  canvas.addEventListener("mousemove", (e) => {
+    if (!isDrawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const currX = e.clientX - rect.left;
+    const currY = e.clientY - rect.top;
+    const color = $("wbColor").value;
+
+    // ১. নিজের ক্যানভাসে আঁকা
+    drawOnCanvas(lastX, lastY, currX, currY, color, true);
+
+    lastX = currX;
+    lastY = currY;
+  });
+
+  window.addEventListener("mouseup", () => (isDrawing = false));
+}
+
+function drawOnCanvas(x0, y0, x1, y1, color, shouldBroadcast) {
+  if (!ctx) return;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y1);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.stroke();
+
+  // যদি আমি আঁকি, তাহলে P2P DataChannel দিয়ে সবার ক্যানভাসে পাঠিয়ে দাও
+  if (shouldBroadcast) {
+    peer.broadcastDataMessage({
+      type: "draw",
+      x0, y0, x1, y1, color,
+    });
+  }
+}
+
+function clearCanvas(shouldBroadcast) {
+  if (!ctx || !canvas) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (shouldBroadcast) {
+    peer.broadcastDataMessage({ type: "clear-whiteboard" });
+    log("হোয়াইটবোর্ড ক্লিয়ার করা হয়েছে 🧹");
+  }
+}
+
 
 $("micBtn").onclick = async () => {
   const isUnmuted = await peer.toggleAudio();
@@ -183,6 +350,7 @@ $("shareBtn").onclick = async () => {
 };
 
 $("leaveBtn").onclick = () => {
+  peer.stopStatsMonitor();
   peer.hangUp();
   peer.stopLocalMedia();
   signaling.close();

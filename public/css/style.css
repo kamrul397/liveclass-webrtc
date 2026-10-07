@@ -24,10 +24,40 @@ video { width: 100%; height: 100%; display: block; object-fit: cover; }
 .placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1e293b; color: #94a3b8; gap: 6px; z-index: 2; }
 .avatar { font-size: 2.5rem; background: #334155; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
 .status-badge { font-size: 0.75rem; background: #0f172a; padding: 2px 8px; border-radius: 12px; }
-figcaption { position: absolute; bottom: 6px; left: 6px; font-size: 0.75rem; background: #000a; padding: 2px 6px; border-radius: 4px; z-index: 3; display: flex; align-items: center; gap: 4px; }
+figcaption { position: absolute; bottom: 6px; left: 6px; right: 6px; font-size: 0.75rem; background: #000a; padding: 3px 8px; border-radius: 4px; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+
+/* নেটওয়ার্ক কোয়ালিটি ব্যাজ (getStats) */
+.net-badge { font-size: 0.65rem; background: #064e3b; color: #34d399; padding: 1px 6px; border-radius: 8px; font-weight: bold; }
+.net-badge.warn { background: #78350f; color: #fde047; }
+.net-badge.bad { background: #7f1d1d; color: #fca5a5; }
+
+/* হোয়াইটবোর্ড সেকশন */
+.whiteboard-section { display: flex; flex-direction: column; background: #1e293b; border-radius: 10px; border: 1px solid #334155; overflow: hidden; }
+.wb-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #0f172a; border-bottom: 1px solid #334155; font-size: 0.85rem; font-weight: bold; }
+.wb-tools { display: flex; align-items: center; gap: 8px; }
+.wb-tools input[type="color"] { width: 30px; height: 30px; padding: 0; border: none; border-radius: 4px; cursor: pointer; background: transparent; }
+.btn-clear { background: #475569; font-size: 0.75rem; padding: 4px 8px; }
+.btn-close { background: #dc2626; font-size: 0.75rem; padding: 4px 8px; }
+#wbCanvas { background: #090d16; cursor: crosshair; width: 100%; height: 100%; display: block; }
 
 aside { background: #1e293b; border-radius: 10px; padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
 aside h2 { font-size: 0.85rem; margin: 0; display: flex; justify-content: space-between; color: #94a3b8; }
+
+/* ট্যাব সুইচ স্টাইল */
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+.tab-btn { background: #0f172a; border: 1px solid #334155; flex: 1; padding: 6px 8px; font-size: 0.75rem; border-radius: 6px; }
+.tab-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: bold; }
+.tab-content { display: flex; flex-direction: column; gap: 10px; }
+
+/* চ্যাট মেসেজ বক্স */
+.chat-messages { height: 180px; overflow-y: auto; background: #0f172a; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem; border: 1px solid #334155; }
+.system-msg { font-size: 0.7rem; color: #64748b; text-align: center; }
+.chat-bubble { background: #1e293b; padding: 6px 8px; border-radius: 6px; border-left: 3px solid #3b82f6; }
+.chat-bubble.mine { border-left-color: #10b981; }
+.chat-bubble .sender { font-size: 0.7rem; color: #94a3b8; font-weight: bold; margin-bottom: 2px; }
+.chat-bubble .text { word-break: break-word; }
+.chat-form { display: flex; gap: 6px; }
+.chat-form input { flex: 1; width: auto; }
 
 /* লবি কার্ড (Host এর জন্য) */
 .lobby-card { background: #334155; padding: 10px; border-radius: 8px; border-left: 4px solid #eab308; }

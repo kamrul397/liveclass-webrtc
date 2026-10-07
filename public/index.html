@@ -20,6 +20,8 @@
         <button id="micBtn" disabled>🎙️ Mic On</button>
         <button id="camBtn" disabled>📷 Cam On</button>
         <button id="shareBtn" disabled>🖥️ Share Screen</button>
+        <button id="boardBtn" disabled>🎨 Whiteboard</button>
+        <button id="handBtn" disabled>✋ Raise Hand</button>
       </div>
     </header>
 
@@ -32,26 +34,60 @@
             <span class="avatar">👤</span>
             <span class="status-badge">Camera Off</span>
           </div>
-          <figcaption>You (Me) <span id="localAudioBadge">🎙️</span></figcaption>
+          <figcaption>
+            You (Me) 
+            <span id="localAudioBadge">🎙️</span> 
+            <span id="localHandBadge" class="hidden">✋</span>
+            <span class="net-badge">📶 Local</span>
+          </figcaption>
         </figure>
       </section>
 
+      <!-- ইন্টারেক্টিভ শেয়ার্ড হোয়াইটবোর্ড ক্যানভাস (টগল হলে গ্রিডের পাশে আসবে) -->
+      <section id="whiteboardSection" class="whiteboard-section hidden">
+        <div class="wb-toolbar">
+          <span>🎨 Class Whiteboard</span>
+          <div class="wb-tools">
+            <input type="color" id="wbColor" value="#3b82f6" title="Pick color" />
+            <button id="wbClearBtn" class="btn-clear">🧹 Clear</button>
+            <button id="wbCloseBtn" class="btn-close">✖</button>
+          </div>
+        </div>
+        <canvas id="wbCanvas" width="800" height="500"></canvas>
+      </section>
+
       <aside>
-        <!-- হোস্ট কন্ট্রোল: লবি রিকোয়েস্ট বক্স (Teacher এর স্ক্রিনে আসবে) -->
-        <div id="lobbyRequests" class="lobby-card hidden">
-          <h3>🚪 Waiting in Lobby</h3>
-          <div id="lobbyList"></div>
+        <!-- ট্যাব সুইচ: Participants বনাম Chat -->
+        <div class="tabs">
+          <button id="tabParticipants" class="tab-btn active">Participants (<span id="userCount">1</span>)</button>
+          <button id="tabChat" class="tab-btn">In-Call Chat 💬</button>
         </div>
 
-        <!-- ক্লাসের অংশগ্রহণকারীদের তালিকা (Participants) -->
-        <h2>Participants (<span id="userCount">1</span>)</h2>
-        <ul id="participantsList" class="participants"></ul>
+        <!-- সেকশন ১: পার্টিসিপেন্ট প্যানেল -->
+        <div id="participantsPanel" class="tab-content">
+          <div id="lobbyRequests" class="lobby-card hidden">
+            <h3>🚪 Waiting in Lobby</h3>
+            <div id="lobbyList"></div>
+          </div>
+          <ul id="participantsList" class="participants"></ul>
+          
+          <h2>Connection States</h2>
+          <ul class="states">
+            <li>signaling: <b id="sigState">-</b></li>
+            <li>connection: <b id="connState">-</b></li>
+          </ul>
+        </div>
 
-        <h2>States</h2>
-        <ul class="states">
-          <li>signaling: <b id="sigState">-</b></li>
-          <li>connection: <b id="connState">-</b></li>
-        </ul>
+        <!-- সেকশন ২: পিয়ার-টু-পিয়ার লাইভ চ্যাট প্যানেল -->
+        <div id="chatPanel" class="tab-content hidden">
+          <div id="chatMessages" class="chat-messages">
+            <div class="system-msg">P2P Encrypted DataChannel Chat</div>
+          </div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" placeholder="Send a message to class..." autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </div>
 
         <h2>Event log <button id="clearLog">clear</button></h2>
         <ol id="log"></ol>

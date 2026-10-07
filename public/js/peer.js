@@ -8,6 +8,10 @@ let videosContainer = null;
 
 /** প্রতিটি বন্ধুর জন্য আলাদা RTCPeerConnection: Map<peerId, RTCPeerConnection> */
 const peers = new Map();
+/** প্রতিটি বন্ধুর ডাটা চ্যানেল: Map<peerId, RTCDataChannel> */
+const dataChannels = new Map();
+
+let onDataChannelMessage = null;
 
 let isAudioRunning = true;
 let isVideoRunning = true;
@@ -17,6 +21,7 @@ let screenStream = null;
 export async function init(options) {
   videosContainer = options.videosContainer;
   sendSignal = options.sendSignal;
+  onDataChannelMessage = options.onDataChannelMessage;
 
   // ক্যামেরা এবং মাইক ক্যাপচার
   localStream = await navigator.mediaDevices.getUserMedia({
@@ -36,6 +41,18 @@ export function getOrCreatePeerConnection(peerId) {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   peers.set(peerId, pc);
   log(`নতুন RTCPeerConnection তৈরি হলো peer ${peerId.slice(0, 6)}-এর জন্য ☎️`);
+
+  // ১. ডাটা চ্যানেল হ্যান্ডলিং (আমরা যখন অফার পাঠাবো, আমরা চ্যানেল তৈরি করবো)
+  try {
+    const dc = pc.createDataChannel("liveclass-data");
+    setupDataChannel(peerId, dc);
+  } catch (e) {}
+
+  // ২. অপর পাশ থেকে চ্যানেল এলে রিসিভ করা (Callee side)
+  pc.ondatachannel = (event) => {
+    log(`P2P DataChannel সংযোগ স্থাপিত হলো peer ${peerId.slice(0, 6)} থেকে 💬`);
+    setupDataChannel(peerId, event.channel);
+  };
 
   // নিজের অডিও ও ভিডিও ট্র্যাক যুক্ত করা
   if (localStream) {
@@ -151,7 +168,10 @@ function ensureRemoteVideoElement(peerId, stream, newTrack) {
         <span class="avatar">👤</span>
         <span class="status-badge">Camera Off</span>
       </div>
-      <figcaption>${peerId.slice(0, 6)} <span id="badge-${peerId}">🎙️</span></figcaption>
+      <figcaption>
+        <span>${peerId.slice(0, 6)} <span id="badge-${peerId}">🎙️</span> <span id="hand-${peerId}" class="hidden">✋</span></span>
+        <span id="net-${peerId}" class="net-badge">📶 --</span>
+      </figcaption>
     `;
     videosContainer.appendChild(box);
   }
@@ -293,3 +313,79 @@ async function revertToCamera() {
 export function getAllPeerIds() {
   return [...peers.keys()];
 }
+
+// ---------------------------------------------------------------------
+// RTCDataChannel Management (P2P Chat & Real-Time Sync)
+// ---------------------------------------------------------------------
+
+function setupDataChannel(peerId, dc) {
+  dataChannels.set(peerId, dc);
+
+  dc.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onDataChannelMessage?.(peerId, data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  dc.onclose = () => {
+    dataChannels.delete(peerId);
+  };
+}
+
+/** ক্লাসের সব বন্ধুদের কাছে ডাটা চ্যানেলে মেসেজ পাঠানো (P2P Broadcast) */
+export function broadcastDataMessage(data) {
+  const json = JSON.stringify(data);
+  for (const [peerId, dc] of dataChannels.entries()) {
+    if (dc.readyState === "open") {
+      dc.send(json);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// Network Quality Monitor via pc.getStats()
+// ---------------------------------------------------------------------
+
+let statsInterval = null;
+
+export function startStatsMonitor() {
+  if (statsInterval) return;
+
+  statsInterval = setInterval(async () => {
+    for (const [peerId, pc] of peers.entries()) {
+      if (pc.connectionState !== "connected") continue;
+
+      try {
+        const stats = await pc.getStats();
+        let rtt = null;
+
+        stats.forEach((report) => {
+          // ক্যান্ডিডেট পেয়ার থেকে RTT (Round Trip Time / Latency) বের করা
+          if (report.type === "candidate-pair" && report.state === "succeeded" && report.currentRoundTripTime) {
+            rtt = Math.round(report.currentRoundTripTime * 1000); // মিলি-সেকেন্ডে রূপান্তর
+          }
+        });
+
+        const badge = document.getElementById(`net-${peerId}`);
+        if (badge && rtt !== null) {
+          badge.textContent = `📶 ${rtt}ms`;
+          badge.className = "net-badge";
+          if (rtt > 150) badge.classList.add("bad");
+          else if (rtt > 80) badge.classList.add("warn");
+        }
+      } catch (err) {}
+    }
+  }, 2000);
+}
+
+export function stopStatsMonitor() {
+  if (statsInterval) {
+    clearInterval(statsInterval);
+    statsInterval = null;
+  }
+}
+
+

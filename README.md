@@ -86,13 +86,16 @@
 
 ---
 
-## 🔮 Roadmap to Production
-- [x] Native 1-to-1 WebRTC calling
-- [x] Multi-user mesh network
-- [x] Waiting room / Lobby system
-- [x] Host moderation (Mute, Kick)
-- [x] Screen sharing via `replaceTrack`
-- [ ] In-call DataChannel chat & raising hands
+## 🔮 Features Completed
+- [x] Native 1-to-1 WebRTC calling (SDP offer/answer, ICE)
+- [x] Multi-user mesh network with auto-layout dynamic grid
+- [x] Waiting room / Lobby admission system
+- [x] Host moderation (Force Mute, Kick user)
+- [x] Screen sharing via `replaceTrack` without renegotiation
+- [x] In-call P2P encrypted chat via `RTCDataChannel`
+- [x] Real-time "Raise Hand" classroom question system
+- [x] Interactive Collaborative Whiteboard with live P2P drawing sync
+- [x] Network Quality Monitor measuring real-time RTT/latency via `pc.getStats()`
 - [ ] Coturn (TURN) relay fallback setup
 - [ ] Transition from Mesh to SFU (mediasoup / LiveKit) for 50+ participants
 
