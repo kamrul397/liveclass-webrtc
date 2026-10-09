@@ -223,6 +223,8 @@ function ensureRemoteVideoElement(peerId, stream, newTrack) {
 
   const videoEl = document.getElementById(`video-${peerId}`);
   if (videoEl) {
+    videoEl.muted = false;
+    videoEl.volume = 1.0;
     if (!videoEl.srcObject) {
       videoEl.srcObject = stream;
     } else if (newTrack) {
@@ -250,34 +252,37 @@ export function isAudioActive() {
   return isAudioRunning;
 }
 
-/** 🔇 নির্দিষ্টভাবে মাইক্রোফোন মিউট করা */
+/** 🔇 নির্দিষ্টভাবে মাইক্রোফোন মিউট করা (WebRTC স্ট্যান্ডার্ড: ট্র্যাকটি চালু রেখে সাইলেন্ট করা) */
 export async function muteAudio() {
-  if (!isAudioRunning) return false;
   const audioTrack = localStream?.getAudioTracks()[0];
   if (audioTrack) {
-    audioTrack.stop();
-    try {
-      localStream.removeTrack(audioTrack);
-    } catch (e) {}
-  }
-  for (const pc of peers.values()) {
-    const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
-    if (sender) await sender.replaceTrack(null);
+    audioTrack.enabled = false;
   }
   isAudioRunning = false;
   log("মাইক্রোফোন মিউট করা হয়েছে 🔇");
   return false;
 }
 
-/** 🎙️ শিক্ষক অনুমতি দিলে বা নিজে আনমিউট করতে চাইলে স্বয়ংক্রিয়ভাবে মাইক্রোফোন অন করা */
+/** 🎙️ শিক্ষক অনুমতি দিলে বা নিজে আনমিউট করতে চাইলে স্বয়ংক্রিয়ভাবে মাইক্রোফোন চালু করা */
 export async function unmuteAudio() {
-  if (isAudioRunning && localStream?.getAudioTracks().length > 0) {
+  let audioTrack = localStream?.getAudioTracks()[0];
+
+  // ১. যদি বিদ্যমান লোকাল স্ট্রিমে লাইভ অডিও ট্র্যাক থাকে (যা জয়েন করার সময় সাইলেন্ট ছিল)
+  if (audioTrack && audioTrack.readyState === "live") {
+    audioTrack.enabled = true;
+    isAudioRunning = true;
+    log("মাইক্রোফোন সক্রিয় ও চালু করা হয়েছে 🎙️");
     return true;
   }
+
+  // ২. ফলব্যাক: যদি ট্র্যাক কোনো কারণে স্টপ বা না থেকে থাকে, তবে নতুন ক্যাপচার করে পিয়ারদের সাথে লিঙ্ক করা
   try {
     const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const newAudioTrack = newStream.getAudioTracks()[0];
+    newAudioTrack.enabled = true;
+
     if (localStream) {
+      if (audioTrack) localStream.removeTrack(audioTrack);
       localStream.addTrack(newAudioTrack);
     } else {
       localStream = newStream;
@@ -287,6 +292,8 @@ export async function unmuteAudio() {
       const sender = pc.getSenders().find((s) => s.track === null || s.track?.kind === "audio");
       if (sender) {
         await sender.replaceTrack(newAudioTrack);
+      } else {
+        pc.addTrack(newAudioTrack, localStream);
       }
     }
     isAudioRunning = true;

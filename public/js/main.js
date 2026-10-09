@@ -115,22 +115,7 @@ const signaling = createSignaling({
   // সিগন্যাল বার্তা
   onSignal: ({ from, data }) => {
     if (data.type === "media-state") {
-      const ph = document.getElementById(`ph-${from}`);
-      const bd = document.getElementById(`badge-${from}`);
-      const vid = document.getElementById(`video-${from}`);
-      if (ph && typeof data.isVideoOn === "boolean") {
-        ph.classList.toggle("hidden", data.isVideoOn);
-        if (data.isVideoOn && vid) vid.play().catch(() => {});
-      }
-      if (bd && typeof data.isAudioOn === "boolean") {
-        bd.textContent = data.isAudioOn ? "🎙️" : "🔇";
-      }
-      const p = participants.get(from);
-      if (p) {
-        if (typeof data.isAudioOn === "boolean") p.isAudioOn = data.isAudioOn;
-        if (typeof data.isVideoOn === "boolean") p.isVideoOn = data.isVideoOn;
-        renderParticipants();
-      }
+      handleMediaStateUpdate(from, data);
       return;
     }
     if (data.type === "raise-hand") {
@@ -231,6 +216,8 @@ async function joinRoom() {
       onDataChannelMessage: (fromPeerId, data) => {
         if (data.type === "chat") {
           appendChatMessage(data.sender, data.text, false);
+        } else if (data.type === "media-state") {
+          handleMediaStateUpdate(fromPeerId, data);
         } else if (data.type === "raise-hand") {
           handlePeerRaiseHand(fromPeerId, data);
         } else if (data.type === "allow-to-speak") {
@@ -638,8 +625,29 @@ $("leaveBtn").onclick = () => {
 };
 
 function broadcastMediaState(data) {
+  const msg = { type: "media-state", ...data };
+  peer.broadcastDataMessage(msg);
   for (const peerId of peer.getAllPeerIds()) {
-    signaling.sendSignal(peerId, { type: "media-state", ...data });
+    signaling.sendSignal(peerId, msg);
+  }
+}
+
+function handleMediaStateUpdate(fromPeerId, data) {
+  const ph = document.getElementById(`ph-${fromPeerId}`);
+  const bd = document.getElementById(`badge-${fromPeerId}`);
+  const vid = document.getElementById(`video-${fromPeerId}`);
+  if (ph && typeof data.isVideoOn === "boolean") {
+    ph.classList.toggle("hidden", data.isVideoOn);
+    if (data.isVideoOn && vid) vid.play().catch(() => {});
+  }
+  if (bd && typeof data.isAudioOn === "boolean") {
+    bd.textContent = data.isAudioOn ? "🎙️" : "🔇";
+  }
+  const p = participants.get(fromPeerId);
+  if (p) {
+    if (typeof data.isAudioOn === "boolean") p.isAudioOn = data.isAudioOn;
+    if (typeof data.isVideoOn === "boolean") p.isVideoOn = data.isVideoOn;
+    renderParticipants();
   }
 }
 
@@ -722,6 +730,7 @@ function allowStudentToSpeak(studentId) {
 }
 
 async function handleAllowToSpeak(data) {
+  if (myRole === "host") return;
   if (data.targetId && data.targetId !== myId) return;
 
   log("🎉 শিক্ষক আপনাকে কথা বলার অনুমতি দিয়েছেন! মাইক চালু করা হচ্ছে... 🎙️");
