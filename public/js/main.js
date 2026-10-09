@@ -126,6 +126,26 @@ const signaling = createSignaling({
       handleAllowToSpeak(data);
       return;
     }
+    if (data.type === "draw") {
+      handleRemoteDraw(data);
+      return;
+    }
+    if (data.type === "whiteboard-toggle") {
+      handleRemoteWhiteboardToggle(data);
+      return;
+    }
+    if (data.type === "request-whiteboard-sync") {
+      handleWhiteboardSyncRequest();
+      return;
+    }
+    if (data.type === "clear-whiteboard") {
+      clearCanvas(false);
+      return;
+    }
+    if (data.type === "restore-whiteboard") {
+      restoreState(data.dataUrl);
+      return;
+    }
     peer.handleSignal(from, data);
   },
 
@@ -223,8 +243,11 @@ async function joinRoom() {
         } else if (data.type === "allow-to-speak") {
           handleAllowToSpeak(data);
         } else if (data.type === "draw") {
-          // অপর প্রান্ত থেকে ড্রয়িং ডাটা আসলে ক্যানভাসে আঁকা
-          drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width, false);
+          handleRemoteDraw(data);
+        } else if (data.type === "whiteboard-toggle") {
+          handleRemoteWhiteboardToggle(data);
+        } else if (data.type === "request-whiteboard-sync") {
+          handleWhiteboardSyncRequest();
         } else if (data.type === "clear-whiteboard") {
           clearCanvas(false);
         } else if (data.type === "restore-whiteboard") {
@@ -430,7 +453,9 @@ $("wbUndoBtn").onclick = () => {
     restoreState(prev);
 
     // সবার স্ক্রিনে Undo সিঙ্ক করা
-    peer.broadcastDataMessage({ type: "restore-whiteboard", dataUrl: prev });
+    const undoMsg = { type: "restore-whiteboard", dataUrl: prev };
+    peer.broadcastDataMessage(undoMsg);
+    for (const peerId of peer.getAllPeerIds()) signaling.sendSignal(peerId, undoMsg);
   }
 };
 
@@ -442,7 +467,9 @@ $("wbRedoBtn").onclick = () => {
     restoreState(next);
 
     // সবার স্ক্রিনে Redo সিঙ্ক করা
-    peer.broadcastDataMessage({ type: "restore-whiteboard", dataUrl: next });
+    const redoMsg = { type: "restore-whiteboard", dataUrl: next };
+    peer.broadcastDataMessage(redoMsg);
+    for (const peerId of peer.getAllPeerIds()) signaling.sendSignal(peerId, redoMsg);
   }
 };
 
@@ -453,23 +480,74 @@ $("boardBtn").onclick = async () => {
     : `<i class="fa-solid fa-xmark"></i><span>Hide</span>`;
   $("boardBtn").classList.toggle("active-off", !isHidden);
 
+  const senderName = $("nameInput").value.trim() || "User";
+  const toggleMsg = {
+    type: "whiteboard-toggle",
+    isOpen: !isHidden,
+    sender: senderName,
+  };
+  peer.broadcastDataMessage(toggleMsg);
+  for (const peerId of peer.getAllPeerIds()) {
+    signaling.sendSignal(peerId, toggleMsg);
+  }
+
   if (!isHidden) {
     setTimeout(resizeCanvas, 50);
-    // 🎨 হোয়াইটবোর্ডকে মূল ভিডিও ফিড হিসেবে ক্লাসে ব্রডকাস্ট করা
+    handleWhiteboardSyncRequest();
     await peer.startWhiteboardVideoStream(canvas);
   } else {
-    // 📷 বন্ধ করলে পুনরায় ক্যামেরা ভিডিওতে ফিরে আসা
     await peer.stopWhiteboardVideoStream();
   }
 };
 
 $("wbCloseBtn").onclick = async () => {
-  $("whiteboardSection").classList.add("hidden");
-  $("boardBtn").innerHTML = `<i class="fa-solid fa-chalkboard"></i><span>Board</span>`;
-  $("boardBtn").classList.remove("active-off");
-  // 📷 বন্ধ করলে পুনরায় ক্যামেরা ভিডিওতে ফিরে আসা
+  openWhiteboardView(false);
   await peer.stopWhiteboardVideoStream();
+
+  const toggleMsg = { type: "whiteboard-toggle", isOpen: false };
+  peer.broadcastDataMessage(toggleMsg);
+  for (const peerId of peer.getAllPeerIds()) {
+    signaling.sendSignal(peerId, toggleMsg);
+  }
 };
+
+function openWhiteboardView(isOpen) {
+  const wbSection = $("whiteboardSection");
+  if (!wbSection) return;
+
+  if (isOpen) {
+    wbSection.classList.remove("hidden");
+    $("boardBtn").innerHTML = `<i class="fa-solid fa-xmark"></i><span>Hide</span>`;
+    $("boardBtn").classList.add("active-off");
+    setTimeout(resizeCanvas, 50);
+  } else {
+    wbSection.classList.add("hidden");
+    $("boardBtn").innerHTML = `<i class="fa-solid fa-chalkboard"></i><span>Board</span>`;
+    $("boardBtn").classList.remove("active-off");
+  }
+}
+
+function handleRemoteWhiteboardToggle(data) {
+  if (data.isOpen) {
+    log(`🎨 ${data.sender || "সহপাঠী"} হোয়াইটবোর্ড চালু করেছেন`);
+    openWhiteboardView(true);
+    const reqMsg = { type: "request-whiteboard-sync" };
+    peer.broadcastDataMessage(reqMsg);
+    for (const peerId of peer.getAllPeerIds()) signaling.sendSignal(peerId, reqMsg);
+  } else {
+    log("হোয়াইটবোর্ড বন্ধ করা হয়েছে 📕");
+    openWhiteboardView(false);
+  }
+}
+
+function handleWhiteboardSyncRequest() {
+  if (canvas && !$("whiteboardSection").classList.contains("hidden")) {
+    const dataUrl = canvas.toDataURL();
+    const restoreMsg = { type: "restore-whiteboard", dataUrl };
+    peer.broadcastDataMessage(restoreMsg);
+    for (const peerId of peer.getAllPeerIds()) signaling.sendSignal(peerId, restoreMsg);
+  }
+}
 
 $("wbClearBtn").onclick = () => {
   clearCanvas(true);
@@ -554,7 +632,7 @@ if (canvas) {
 }
 
 function drawOnCanvas(x0, y0, x1, y1, color, width, shouldBroadcast) {
-  if (!ctx) return;
+  if (!ctx || !canvas) return;
   ctx.beginPath();
   ctx.moveTo(x0, y0);
   ctx.lineTo(x1, y1);
@@ -564,11 +642,37 @@ function drawOnCanvas(x0, y0, x1, y1, color, width, shouldBroadcast) {
   ctx.lineJoin = "round";
   ctx.stroke();
 
-  if (shouldBroadcast) {
-    peer.broadcastDataMessage({
+  if (shouldBroadcast && canvas.width > 0 && canvas.height > 0) {
+    const drawMsg = {
       type: "draw",
-      x0, y0, x1, y1, color, width,
-    });
+      nx0: x0 / canvas.width,
+      ny0: y0 / canvas.height,
+      nx1: x1 / canvas.width,
+      ny1: y1 / canvas.height,
+      color,
+      width,
+    };
+    peer.broadcastDataMessage(drawMsg);
+    for (const peerId of peer.getAllPeerIds()) {
+      signaling.sendSignal(peerId, drawMsg);
+    }
+  }
+}
+
+function handleRemoteDraw(data) {
+  if (!canvas || !ctx) return;
+  if ($("whiteboardSection").classList.contains("hidden")) {
+    openWhiteboardView(true);
+  }
+
+  if (typeof data.nx0 === "number" && typeof data.ny0 === "number") {
+    const x0 = data.nx0 * canvas.width;
+    const y0 = data.ny0 * canvas.height;
+    const x1 = data.nx1 * canvas.width;
+    const y1 = data.ny1 * canvas.height;
+    drawOnCanvas(x0, y0, x1, y1, data.color, data.width, false);
+  } else if (typeof data.x0 === "number") {
+    drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width, false);
   }
 }
 
@@ -577,7 +681,11 @@ function clearCanvas(shouldBroadcast) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   saveState();
   if (shouldBroadcast) {
-    peer.broadcastDataMessage({ type: "clear-whiteboard" });
+    const clearMsg = { type: "clear-whiteboard" };
+    peer.broadcastDataMessage(clearMsg);
+    for (const peerId of peer.getAllPeerIds()) {
+      signaling.sendSignal(peerId, clearMsg);
+    }
     log("হোয়াইটবোর্ড ক্লিয়ার করা হয়েছে 🧹");
   }
 }

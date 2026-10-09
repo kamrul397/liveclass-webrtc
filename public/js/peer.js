@@ -374,6 +374,14 @@ export async function toggleScreenShare() {
     return false;
   }
 
+  // মোবাইল ডিভাইস ডিটেকশন (iOS Safari ও Android ব্রাউজারে getDisplayMedia সীমাবদ্ধ)
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  if (isMobile || !navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    log("⚠️ মোবাইল অপারেটিং সিস্টেমে (Android/iOS) ব্রাউজার থেকে স্ক্রিন শেয়ারিং প্রযুক্তি সীমাবদ্ধ। স্ক্রিন শেয়ার করতে ল্যাপটপ বা কম্পিউটার ব্যবহার করুন।", "warn");
+    alert("📱 মোবাইল ব্রাউজারে স্ক্রিন শেয়ার করার অনুমতি মোবাইল অপারেটিং সিস্টেম (Android/iOS) দ্বারা সীমাবদ্ধ।\n\nদয়া করে স্ক্রিন শেয়ার করতে ল্যাপটপ বা ডেস্কটপ কম্পিউটার ব্যবহার করুন।");
+    return false;
+  }
+
   try {
     screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
     const screenTrack = screenStream.getVideoTracks()[0];
@@ -391,6 +399,7 @@ export async function toggleScreenShare() {
     log("স্ক্রিন শেয়ার চালু হলো 🖥️");
     return true;
   } catch (err) {
+    log(`স্ক্রিন শেয়ার চালু করা যায়নি: ${err.message}`, "err");
     return false;
   }
 }
