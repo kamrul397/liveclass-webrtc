@@ -212,7 +212,7 @@ function ensureRemoteVideoElement(peerId, stream, newTrack) {
       <div class="card-overlay">
         <span class="peer-name">${peerId.slice(0, 6)}</span>
         <div class="card-badges">
-          <span id="badge-${peerId}" class="badge-icon">🎙️</span>
+          <span id="badge-${peerId}" class="badge-icon">🔇</span>
           <span id="hand-${peerId}" class="badge-icon hand-pulse hidden">✋</span>
           <span id="net-${peerId}" class="net-pill">📶 --</span>
         </div>
@@ -246,35 +246,63 @@ function removeRemoteVideoElement(peerId) {
 // Media Controls
 // ---------------------------------------------------------------------
 
-export async function toggleAudio() {
+export function isAudioActive() {
+  return isAudioRunning;
+}
+
+/** 🔇 নির্দিষ্টভাবে মাইক্রোফোন মিউট করা */
+export async function muteAudio() {
+  if (!isAudioRunning) return false;
   const audioTrack = localStream?.getAudioTracks()[0];
-  if (!audioTrack && isAudioRunning) return false;
-
-  if (isAudioRunning) {
+  if (audioTrack) {
     audioTrack.stop();
-    for (const pc of peers.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
-      if (sender) await sender.replaceTrack(null);
-    }
-    isAudioRunning = false;
-    log("মাইক্রোফোন হার্ডওয়্যার অফ 🛑");
-    return false;
-  } else {
     try {
-      const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const newAudioTrack = newStream.getAudioTracks()[0];
-      localStream.addTrack(newAudioTrack);
+      localStream.removeTrack(audioTrack);
+    } catch (e) {}
+  }
+  for (const pc of peers.values()) {
+    const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
+    if (sender) await sender.replaceTrack(null);
+  }
+  isAudioRunning = false;
+  log("মাইক্রোফোন মিউট করা হয়েছে 🔇");
+  return false;
+}
 
-      for (const pc of peers.values()) {
-        const sender = pc.getSenders().find((s) => s.track === null || s.track?.kind === "audio");
-        if (sender) await sender.replaceTrack(newAudioTrack);
-      }
-      isAudioRunning = true;
-      log("মাইক্রোফোন হার্ডওয়্যার অন 🎙️");
-      return true;
-    } catch (err) {
-      return false;
+/** 🎙️ শিক্ষক অনুমতি দিলে বা নিজে আনমিউট করতে চাইলে স্বয়ংক্রিয়ভাবে মাইক্রোফোন অন করা */
+export async function unmuteAudio() {
+  if (isAudioRunning && localStream?.getAudioTracks().length > 0) {
+    return true;
+  }
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const newAudioTrack = newStream.getAudioTracks()[0];
+    if (localStream) {
+      localStream.addTrack(newAudioTrack);
+    } else {
+      localStream = newStream;
     }
+
+    for (const pc of peers.values()) {
+      const sender = pc.getSenders().find((s) => s.track === null || s.track?.kind === "audio");
+      if (sender) {
+        await sender.replaceTrack(newAudioTrack);
+      }
+    }
+    isAudioRunning = true;
+    log("মাইক্রোফোন চালু করা হয়েছে 🎙️");
+    return true;
+  } catch (err) {
+    log(`মাইক্রোফোন চালু করা যায়নি: ${err.message}`, "err");
+    return false;
+  }
+}
+
+export async function toggleAudio() {
+  if (isAudioRunning) {
+    return await muteAudio();
+  } else {
+    return await unmuteAudio();
   }
 }
 
@@ -376,6 +404,50 @@ async function revertToCamera() {
   if (localVid && localStream) localVid.srcObject = localStream;
   isScreenSharing = false;
   log("আবার ক্যামেরা ভিডিওতে ফিরে আসা হলো 📷");
+}
+
+let whiteboardStream = null;
+
+/** 🎨 হোয়াইটবোর্ড ক্যানভাসকে লাইভ ভিডিও স্ট্রিম হিসেবে ক্লাসে ব্রডকাস্ট করা */
+export async function startWhiteboardVideoStream(canvas) {
+  if (!canvas || !canvas.captureStream) return;
+
+  try {
+    // ক্যানভাস থেকে ৩০ এফপিএস লাইভ ভিডিও স্ট্রিম তৈরি
+    whiteboardStream = canvas.captureStream(30);
+    const wbTrack = whiteboardStream.getVideoTracks()[0];
+
+    // প্রতিটি পিয়ারের ভিডিও লাইনে ক্যামেরার বদলে হোয়াইটবোর্ড ট্র্যাক লাগানো
+    for (const [peerId, pc] of peers.entries()) {
+      const sender = videoSenders.get(peerId) || pc.getSenders().find((s) => s.track === null || s.track?.kind === "video");
+      if (sender && wbTrack) {
+        await sender.replaceTrack(wbTrack);
+      }
+    }
+
+    log("হোয়াইটবোর্ড এখন মূল ভিডিও ফিড হিসেবে সম্প্রচারিত হচ্ছে! 🎨📺");
+  } catch (err) {
+    console.error("Whiteboard video capture failed:", err);
+  }
+}
+
+/** 📷 হোয়াইটবোর্ড ভিডিও সম্প্রচার বন্ধ করে পুনরায় ক্যামেরা ট্র্যাকে ফিরে আসা */
+export async function stopWhiteboardVideoStream() {
+  if (whiteboardStream) {
+    for (const t of whiteboardStream.getTracks()) t.stop();
+    whiteboardStream = null;
+  }
+
+  // ক্যামেরা ট্র্যাকে ফিরে যাওয়া
+  const cameraTrack = localStream?.getVideoTracks()[0] || null;
+  for (const [peerId, pc] of peers.entries()) {
+    const sender = videoSenders.get(peerId) || pc.getSenders().find((s) => s.track === null || s.track?.kind === "video");
+    if (sender) {
+      await sender.replaceTrack(cameraTrack);
+    }
+  }
+
+  log("হোয়াইটবোর্ড ভিডিও ফিড বন্ধ করে পুনরায় ক্যামেরায় ফিরে আসা হলো 📷");
 }
 
 export function getAllPeerIds() {

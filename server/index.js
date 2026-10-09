@@ -111,6 +111,7 @@ wss.on("connection", (ws) => {
           const existingPeerList = [...room.peers.entries()].map(([id, p]) => ({
             id,
             name: p.name,
+            role: id === room.hostId ? "host" : "student",
           }));
 
           send(waitingStudent.ws, {

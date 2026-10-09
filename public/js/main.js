@@ -74,11 +74,26 @@ const signaling = createSignaling({
     $("roleBadge").className = `badge ${role}`;
 
     log(`ক্লাসে জয়েন করেছি! ভূমিকা: ${role}`);
-    updateParticipant(yourId, $("nameInput").value, role);
+
+    // 🔇 ছাত্র জয়েন করলে ক্লাসের নিয়ম অনুযায়ী বাই-ডিফল্ট মিউট থাকবে
+    if (role === "student") {
+      peer.muteAudio().then(() => {
+        $("micBtn").innerHTML = `<i class="fa-solid fa-microphone-slash"></i><span>Muted</span>`;
+        $("micBtn").classList.add("active-off");
+        $("localAudioBadge").textContent = "🔇";
+        broadcastMediaState({ isAudioOn: false });
+        updateParticipant(yourId, $("nameInput").value, role, false, false);
+        log("ক্লাসরুমের নিয়ম অনুযায়ী আপনার মাইক স্বয়ংক্রিয়ভাবে মিউট করা হয়েছে 🔇");
+      });
+    } else {
+      updateParticipant(yourId, $("nameInput").value, role, true, false);
+    }
 
     // ক্লাসে আগে থেকে উপস্থিত সবাইকে তালিকায় দেখাই (কিন্তু এদেরকে কল পাঠাবো না, এরাই আমাকে কল পাঠাবে!)
     for (const p of existingPeers) {
-      updateParticipant(p.id, p.name, "student");
+      const pRole = p.role || "student";
+      const pAudio = pRole === "host";
+      updateParticipant(p.id, p.name, pRole, pAudio, false);
       log(`আগে থেকেই ক্লাসে আছেন: ${p.name}`);
     }
   },
@@ -86,7 +101,7 @@ const signaling = createSignaling({
   // নতুন কেউ ক্লাসে প্রবেশ করলে: আমরা পুরনোরা তাকে কল (Offer) পাঠাবো
   onPeerJoined: ({ peerId, name }) => {
     log(`নতুন সহপাঠী ক্লাসে প্রবেশ করেছে: ${name} → আমি তাকে কল পাঠাচ্ছি 📞`);
-    updateParticipant(peerId, name, "student");
+    updateParticipant(peerId, name, "student", false, false);
     peer.callPeer(peerId);
   },
 
@@ -107,7 +122,23 @@ const signaling = createSignaling({
         ph.classList.toggle("hidden", data.isVideoOn);
         if (data.isVideoOn && vid) vid.play().catch(() => {});
       }
-      if (bd && typeof data.isAudioOn === "boolean") bd.textContent = data.isAudioOn ? "🎙️" : "🔇";
+      if (bd && typeof data.isAudioOn === "boolean") {
+        bd.textContent = data.isAudioOn ? "🎙️" : "🔇";
+      }
+      const p = participants.get(from);
+      if (p) {
+        if (typeof data.isAudioOn === "boolean") p.isAudioOn = data.isAudioOn;
+        if (typeof data.isVideoOn === "boolean") p.isVideoOn = data.isVideoOn;
+        renderParticipants();
+      }
+      return;
+    }
+    if (data.type === "raise-hand") {
+      handlePeerRaiseHand(from, data);
+      return;
+    }
+    if (data.type === "allow-to-speak") {
+      handleAllowToSpeak(data);
       return;
     }
     peer.handleSignal(from, data);
@@ -169,10 +200,15 @@ const signaling = createSignaling({
   // শিক্ষক ফোর্স মিউট করলে
   onForceMuted: async () => {
     log("শিক্ষক আপনাকে মিউট করে দিয়েছেন! 🔇");
-    const isUnmuted = await peer.toggleAudio();
-    if (!isUnmuted) {
-      $("micBtn").textContent = "🔇 Mic Off";
-      $("localAudioBadge").textContent = "🔇";
+    await peer.muteAudio();
+    $("micBtn").innerHTML = `<i class="fa-solid fa-microphone-slash"></i><span>Muted</span>`;
+    $("micBtn").classList.add("active-off");
+    $("localAudioBadge").textContent = "🔇";
+    broadcastMediaState({ isAudioOn: false });
+    const me = participants.get(myId);
+    if (me) {
+      me.isAudioOn = false;
+      renderParticipants();
     }
   },
 
@@ -196,9 +232,9 @@ async function joinRoom() {
         if (data.type === "chat") {
           appendChatMessage(data.sender, data.text, false);
         } else if (data.type === "raise-hand") {
-          const handBadge = document.getElementById(`hand-${fromPeerId}`);
-          if (handBadge) handBadge.classList.toggle("hidden", !data.isRaised);
-          if (data.isRaised) log(`✋ ${data.sender} হাত তুলেছে! (Question)`);
+          handlePeerRaiseHand(fromPeerId, data);
+        } else if (data.type === "allow-to-speak") {
+          handleAllowToSpeak(data);
         } else if (data.type === "draw") {
           // অপর প্রান্ত থেকে ড্রয়িং ডাটা আসলে ক্যানভাসে আঁকা
           drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, data.width, false);
@@ -262,12 +298,24 @@ $("handBtn").onclick = () => {
   $("handBtn").classList.toggle("active-off", isHandRaised);
   $("localHandBadge").classList.toggle("hidden", !isHandRaised);
 
-  // ক্লাসের সবার কাছে P2P DataChannel-এ হাত তোলার মেসেজ পাঠাই
-  peer.broadcastDataMessage({
+  const me = participants.get(myId);
+  if (me) {
+    me.isHandRaised = isHandRaised;
+    renderParticipants();
+  }
+
+  const raiseMsg = {
     type: "raise-hand",
     sender: $("nameInput").value.trim() || "Student",
     isRaised: isHandRaised,
-  });
+    studentId: myId,
+  };
+
+  // ক্লাসের সবার কাছে P2P DataChannel এবং Signaling-এ হাত তোলার মেসেজ পাঠাই
+  peer.broadcastDataMessage(raiseMsg);
+  for (const peerId of peer.getAllPeerIds()) {
+    signaling.sendSignal(peerId, raiseMsg);
+  }
   log(isHandRaised ? "আপনি ক্লাসে হাত তুলেছেন ✋" : "হাত নামিয়েছেন");
 };
 
@@ -411,21 +459,29 @@ $("wbRedoBtn").onclick = () => {
   }
 };
 
-$("boardBtn").onclick = () => {
+$("boardBtn").onclick = async () => {
   const isHidden = $("whiteboardSection").classList.toggle("hidden");
   $("boardBtn").innerHTML = isHidden 
     ? `<i class="fa-solid fa-chalkboard"></i><span>Board</span>` 
     : `<i class="fa-solid fa-xmark"></i><span>Hide</span>`;
   $("boardBtn").classList.toggle("active-off", !isHidden);
+
   if (!isHidden) {
     setTimeout(resizeCanvas, 50);
+    // 🎨 হোয়াইটবোর্ডকে মূল ভিডিও ফিড হিসেবে ক্লাসে ব্রডকাস্ট করা
+    await peer.startWhiteboardVideoStream(canvas);
+  } else {
+    // 📷 বন্ধ করলে পুনরায় ক্যামেরা ভিডিওতে ফিরে আসা
+    await peer.stopWhiteboardVideoStream();
   }
 };
 
-$("wbCloseBtn").onclick = () => {
+$("wbCloseBtn").onclick = async () => {
   $("whiteboardSection").classList.add("hidden");
   $("boardBtn").innerHTML = `<i class="fa-solid fa-chalkboard"></i><span>Board</span>`;
   $("boardBtn").classList.remove("active-off");
+  // 📷 বন্ধ করলে পুনরায় ক্যামেরা ভিডিওতে ফিরে আসা
+  await peer.stopWhiteboardVideoStream();
 };
 
 $("wbClearBtn").onclick = () => {
@@ -548,6 +604,11 @@ $("micBtn").onclick = async () => {
   $("micBtn").classList.toggle("active-off", !isUnmuted);
   $("localAudioBadge").textContent = isUnmuted ? "🎙️" : "🔇";
   broadcastMediaState({ isAudioOn: isUnmuted });
+  const me = participants.get(myId);
+  if (me) {
+    me.isAudioOn = isUnmuted;
+    renderParticipants();
+  }
 };
 
 $("camBtn").onclick = async () => {
@@ -582,15 +643,141 @@ function broadcastMediaState(data) {
   }
 }
 
+// ---------- Hand Raise & Speak Approval Handlers ----------
+
+function handlePeerRaiseHand(fromPeerId, data) {
+  const isRaised = !!data.isRaised;
+  const p = participants.get(fromPeerId);
+  const senderName = data.sender || (p ? p.name : "সহপাঠী");
+
+  if (p) {
+    p.isHandRaised = isRaised;
+    renderParticipants();
+  }
+
+  const handBadge = document.getElementById(`hand-${fromPeerId}`);
+  if (handBadge) {
+    handBadge.classList.toggle("hidden", !isRaised);
+  }
+
+  if (isRaised) {
+    log(`✋ ${senderName} হাত তুলেছে! (প্রশ্ন করতে চায়)`);
+    if (myRole === "host") {
+      showHandBanner(fromPeerId, senderName);
+    }
+  } else {
+    hideHandBanner(fromPeerId);
+  }
+}
+
+function showHandBanner(studentId, studentName) {
+  const banner = $("handNotificationBanner");
+  if (!banner) return;
+  banner.innerHTML = `
+    <span>✋ <b>${escapeHtml(studentName)}</b> কথা বলতে চায়!</span>
+    <button id="bannerAllowBtn-${studentId}" class="btn-banner-allow">
+      <i class="fa-solid fa-microphone"></i> অনুমতি দিন 🎙️
+    </button>
+    <button id="bannerDismissBtn-${studentId}" class="btn-banner-dismiss" title="Dismiss">✕</button>
+  `;
+  banner.classList.remove("hidden");
+
+  const allowBtn = $(`bannerAllowBtn-${studentId}`);
+  if (allowBtn) {
+    allowBtn.onclick = () => allowStudentToSpeak(studentId);
+  }
+
+  const dismissBtn = $(`bannerDismissBtn-${studentId}`);
+  if (dismissBtn) {
+    dismissBtn.onclick = () => hideHandBanner(studentId);
+  }
+}
+
+function hideHandBanner(studentId) {
+  const banner = $("handNotificationBanner");
+  if (banner) {
+    banner.classList.add("hidden");
+    banner.innerHTML = "";
+  }
+}
+
+function allowStudentToSpeak(studentId) {
+  const p = participants.get(studentId);
+  const studentName = p ? p.name : "ছাত্র";
+  log(`🎙️ ${studentName}-কে কথা বলার অনুমতি দেওয়া হলো`);
+
+  // ১. ছাত্রের কাছে অনুমতি পাঠানো (P2P DataChannel + Signaling উভয়েই)
+  const allowMsg = { type: "allow-to-speak", targetId: studentId };
+  peer.broadcastDataMessage(allowMsg);
+  signaling.sendSignal(studentId, allowMsg);
+
+  // ২. হোস্টের স্ক্রিন থেকে ব্যানার এবং হাত নামিয়ে নেওয়া
+  if (p) {
+    p.isHandRaised = false;
+    renderParticipants();
+  }
+  const handBadge = document.getElementById(`hand-${studentId}`);
+  if (handBadge) handBadge.classList.add("hidden");
+  hideHandBanner(studentId);
+}
+
+async function handleAllowToSpeak(data) {
+  if (data.targetId && data.targetId !== myId) return;
+
+  log("🎉 শিক্ষক আপনাকে কথা বলার অনুমতি দিয়েছেন! মাইক চালু করা হচ্ছে... 🎙️");
+
+  // ১. মাইক স্বয়ংক্রিয়ভাবে আনমিউট করা
+  const success = await peer.unmuteAudio();
+  if (success) {
+    $("micBtn").innerHTML = `<i class="fa-solid fa-microphone"></i><span>Mic</span>`;
+    $("micBtn").classList.remove("active-off");
+    $("localAudioBadge").textContent = "🎙️";
+    broadcastMediaState({ isAudioOn: true });
+    const me = participants.get(myId);
+    if (me) {
+      me.isAudioOn = true;
+      renderParticipants();
+    }
+  }
+
+  // ২. হাত স্বয়ংক্রিয়ভাবে নামিয়ে ফেলা
+  isHandRaised = false;
+  $("handBtn").innerHTML = `<i class="fa-solid fa-hand"></i><span>Hand</span>`;
+  $("handBtn").classList.remove("active-off");
+  $("localHandBadge").classList.add("hidden");
+
+  // ক্লাসের সবাইকে হাত নামানোর তথ্য ব্রডকাস্ট করা
+  const lowerMsg = {
+    type: "raise-hand",
+    sender: $("nameInput").value.trim() || "Student",
+    isRaised: false,
+    studentId: myId,
+  };
+  peer.broadcastDataMessage(lowerMsg);
+  for (const peerId of peer.getAllPeerIds()) {
+    signaling.sendSignal(peerId, lowerMsg);
+  }
+}
+
 // ---------- Participant List & Host Controls ----------
-function updateParticipant(id, name, role) {
-  participants.set(id, { name, role });
+function updateParticipant(id, name, role, isAudioOn = null, isHandRaised = null) {
+  const existing = participants.get(id);
+  const finalRole = role || existing?.role || "student";
+  const defaultAudio = finalRole === "host";
+
+  participants.set(id, {
+    name: name || existing?.name || "Participant",
+    role: finalRole,
+    isAudioOn: typeof isAudioOn === "boolean" ? isAudioOn : (existing?.isAudioOn ?? defaultAudio),
+    isHandRaised: typeof isHandRaised === "boolean" ? isHandRaised : (existing?.isHandRaised ?? false),
+  });
   renderParticipants();
 }
 
 function removeParticipant(id) {
   participants.delete(id);
   renderParticipants();
+  hideHandBanner(id);
 }
 
 function renderParticipants() {
@@ -603,25 +790,38 @@ function renderParticipants() {
     li.className = "user-item";
 
     let actions = "";
-    // শুধু Teacher (Host) অন্য ছাত্রদের Mute বা Kick করার বাটন দেখতে পাবে!
+    // শুধু Teacher (Host) অন্য ছাত্রদের Allow, Mute বা Kick করার বাটন দেখতে পাবে!
     if (myRole === "host" && !isMe) {
+      const allowBtn = user.isHandRaised 
+        ? `<button class="ctrl-btn btn-allow-speak" id="allow-user-${id}" title="অনুমতি দিন (Allow to Speak)"><i class="fa-solid fa-microphone"></i> Allow</button>` 
+        : "";
       actions = `
-        <div>
+        <div style="display:flex;align-items:center;">
+          ${allowBtn}
           <button class="ctrl-btn" id="mute-user-${id}" title="Mute Student">🔇</button>
           <button class="ctrl-btn ctrl-kick" id="kick-user-${id}" title="Remove Student">🚫</button>
         </div>
       `;
     }
 
+    const audioIcon = user.isAudioOn ? "🎙️" : "🔇";
+    const handIcon = user.isHandRaised ? "✋ " : "";
+
     li.innerHTML = `
-      <span>👤 ${user.name} ${isMe ? "(You)" : ""} ${user.role === "host" ? "👑" : ""}</span>
+      <span>👤 ${handIcon}<b>${escapeHtml(user.name)}</b> ${isMe ? "(You)" : ""} ${user.role === "host" ? "👑" : ""} <span class="user-audio-state">${audioIcon}</span></span>
       ${actions}
     `;
     $("participantsList").appendChild(li);
 
     if (myRole === "host" && !isMe) {
-      $(`mute-user-${id}`).onclick = () => signaling.forceMuteUser(id);
-      $(`kick-user-${id}`).onclick = () => signaling.kickUser(id);
+      if (user.isHandRaised) {
+        const allowBtnEl = $(`allow-user-${id}`);
+        if (allowBtnEl) allowBtnEl.onclick = () => allowStudentToSpeak(id);
+      }
+      const muteBtnEl = $(`mute-user-${id}`);
+      if (muteBtnEl) muteBtnEl.onclick = () => signaling.forceMuteUser(id);
+      const kickBtnEl = $(`kick-user-${id}`);
+      if (kickBtnEl) kickBtnEl.onclick = () => signaling.kickUser(id);
     }
   }
 }
