@@ -27,48 +27,15 @@ export async function init(options) {
   onDataChannelMessage = options.onDataChannelMessage;
   localVideoEl = options.localVideo;
 
-  // ১. ডিভাইস ক্যাপচার করার ফলব্যাক স্ট্র্যাটেজি
-  localStream = null;
+  // ক্যামেরা এবং মাইক ক্যাপচার
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true,
+  });
 
-  try {
-    // প্রথমে ক্যামেরা ও মাইক দুটোই নেওয়ার চেষ্টা
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    isVideoRunning = true;
-    isAudioRunning = true;
-  } catch (err1) {
-    log(`উভয় ডিভাইস পাওয়া যায়নি (${err1.name}), বিকল্প চেষ্টা করা হচ্ছে... ⚠️`, "warn");
-
-    // শুধু অডিও নেওয়ার চেষ্টা (ক্যামেরা না থাকলে)
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-      isVideoRunning = false;
-      isAudioRunning = true;
-      log("শুধু মাইক্রোফোন পাওয়া গেছে (ক্যামেরা নেই) 🎙️");
-    } catch (err2) {
-      // শুধু ভিডিও নেওয়ার চেষ্টা (মাইক না থাকলে)
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        isVideoRunning = true;
-        isAudioRunning = false;
-        log("শুধু ক্যামেরা পাওয়া গেছে (মাইক্রোফোন নেই) 📷");
-      } catch (err3) {
-        // কোনো ডিভাইস না থাকলে ভিউয়ার মোড
-        localStream = new MediaStream();
-        isVideoRunning = false;
-        isAudioRunning = false;
-        log("⚠️ কোনো ক্যামেরা বা মাইক্রোফোন পাওয়া যায়নি। আপনি লিসেনার/ভিউয়ার হিসেবে জয়েন করছেন।", "err");
-      }
-    }
-  }
-
-  if (localVideoEl && localStream) {
-    localVideoEl.srcObject = localStream;
-  }
-
-  const tracks = localStream ? localStream.getTracks() : [];
-  log(`Captured ${tracks.length} tracks: ${tracks.map((t) => t.kind).join(", ") || "None (Viewer mode)"}`);
-
-  return { isVideoRunning, isAudioRunning };
+  localVideoEl.srcObject = localStream;
+  const tracks = localStream.getTracks();
+  log(`Captured ${tracks.length} tracks: ${tracks.map((t) => t.kind).join(", ")}`);
 }
 
 /** নির্দিষ্ট peerId-এর জন্য PeerConnection তৈরি বা রিটার্ন করা */

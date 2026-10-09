@@ -187,7 +187,7 @@ async function joinRoom() {
   if (!roomId) return alert("Enter a room name");
 
   try {
-    const { isVideoRunning, isAudioRunning } = await peer.init({
+    await peer.init({
       localVideo: $("localVideo"),
       videosContainer: $("videosGrid"),
       sendSignal: signaling.sendSignal,
@@ -216,19 +216,6 @@ async function joinRoom() {
     // নেটওয়ার্ক কোয়ালিটি মনিটর শুরু
     peer.startStatsMonitor();
     document.body.classList.add("in-call");
-
-    // প্রাথমিক হার্ডওয়্যার অবস্থা অনুযায়ী UI বাটন আপডেট
-    if (!isVideoRunning) {
-      $("localPlaceholder").classList.remove("hidden");
-      $("camBtn").innerHTML = `<i class="fa-solid fa-video-slash"></i><span>Off</span>`;
-      $("camBtn").classList.add("active-off");
-    }
-
-    if (!isAudioRunning) {
-      $("localAudioBadge").textContent = "🔇";
-      $("micBtn").innerHTML = `<i class="fa-solid fa-microphone-slash"></i><span>Muted</span>`;
-      $("micBtn").classList.add("active-off");
-    }
 
     $("joinBtn").disabled = true;
     $("leaveBtn").disabled = false;

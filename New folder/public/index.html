@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>LiveClass — Next-Gen Virtual Classroom</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <!-- টপ ন্যাভ বার -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="brand">
+          <span class="brand-icon">🎓</span>
+          <span class="brand-name">LiveClass</span>
+        </div>
+        <span id="roleBadge" class="badge hidden">Role</span>
+      </div>
+
+      <!-- ক্লাসরুমে জয়েন ফর্ম (কল শুরু হওয়ার আগে থাকে) -->
+      <div id="joinControls" class="join-controls">
+        <div class="input-group">
+          <i class="fa-solid fa-user"></i>
+          <input id="nameInput" placeholder="Your name" value="Student" />
+        </div>
+        <div class="input-group">
+          <i class="fa-solid fa-hashtag"></i>
+          <input id="roomInput" placeholder="Room" value="math101" />
+        </div>
+        <button id="joinBtn" class="btn-primary">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> Join Class
+        </button>
+      </div>
+
+      <div class="header-right">
+        <button id="copyLinkBtn" class="btn-primary btn-copy" title="Copy Invite Link">
+          <i class="fa-solid fa-link"></i> <span>Share Link</span>
+        </button>
+        <button id="sidebarToggleBtn" class="icon-btn" title="Toggle Sidebar">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- মূল অ্যাপ্লিকেশন বডি -->
+    <main class="app-container">
+      <!-- বামপাশ: ভিডিও গ্রিড ও হোয়াইটবোর্ড -->
+      <section class="stage">
+        <!-- ভিডিও গ্রিড -->
+        <div id="videosGrid" class="videos-grid">
+          <div id="localBox" class="video-card">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div id="localPlaceholder" class="placeholder hidden">
+              <div class="avatar-glow">👤</div>
+              <span class="status-pill">Camera Off</span>
+            </div>
+            <div class="card-overlay">
+              <span class="peer-name">You (Me)</span>
+              <div class="card-badges">
+                <span id="localAudioBadge" class="badge-icon">🎙️</span>
+                <span id="localHandBadge" class="badge-icon hand-pulse hidden">✋</span>
+                <span class="net-pill">📶 Local</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ইন্টারেক্টিভ শেয়ার্ড হোয়াইটবোর্ড -->
+        <div id="whiteboardSection" class="whiteboard-modal hidden">
+          <div class="wb-bar">
+            <span class="wb-title"><i class="fa-solid fa-chalkboard"></i> Interactive Board</span>
+            <div class="wb-actions">
+              <button id="wbPenBtn" class="btn-tool active" title="Pen Mode"><i class="fa-solid fa-pen"></i> Pen</button>
+              <button id="wbEraserBtn" class="btn-tool" title="Eraser/Duster"><i class="fa-solid fa-eraser"></i> Eraser</button>
+              <input type="color" id="wbColor" value="#3b82f6" title="Pick color" />
+              <button id="wbUndoBtn" class="btn-tool" title="Undo"><i class="fa-solid fa-rotate-left"></i></button>
+              <button id="wbRedoBtn" class="btn-tool" title="Redo"><i class="fa-solid fa-rotate-right"></i></button>
+              <button id="wbClearBtn" class="btn-tool" title="Clear Canvas"><i class="fa-solid fa-trash-can"></i> Clear</button>
+              <button id="wbCloseBtn" class="btn-tool btn-danger"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+          </div>
+          <div class="canvas-container">
+            <canvas id="wbCanvas" width="900" height="550"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- ডানপাশ: কল সাইডবার (Participants & Chat) -->
+      <aside id="callSidebar" class="call-sidebar">
+        <div class="sidebar-tabs">
+          <button id="tabParticipants" class="tab-item active">
+            <i class="fa-solid fa-users"></i> People (<span id="userCount">1</span>)
+          </button>
+          <button id="tabChat" class="tab-item">
+            <i class="fa-solid fa-comments"></i> In-Call Chat
+          </button>
+        </div>
+
+        <!-- ট্যাব ১: পার্টিসিপেন্ট তালিকা ও লবি -->
+        <div id="participantsPanel" class="tab-view active">
+          <div id="lobbyRequests" class="lobby-box hidden">
+            <div class="lobby-header">
+              <i class="fa-solid fa-door-open"></i> Waiting in Lobby
+            </div>
+            <div id="lobbyList"></div>
+          </div>
+
+          <div class="section-title">Participants in Call</div>
+          <ul id="participantsList" class="user-list"></ul>
+
+          <div class="section-title">Diagnostics</div>
+          <div class="diagnostics-card">
+            <div>Signaling: <b id="sigState" class="text-accent">-</b></div>
+            <div>Connection: <b id="connState" class="text-accent">-</b></div>
+          </div>
+
+          <div class="section-title log-title">
+            <span>Event Logs</span>
+            <button id="clearLog" class="btn-xs">Clear</button>
+          </div>
+          <ol id="log" class="event-terminal"></ol>
+        </div>
+
+        <!-- ট্যাব ২: পিয়ার চ্যাট প্যানেল -->
+        <div id="chatPanel" class="tab-view hidden">
+          <div id="chatMessages" class="chat-feed">
+            <div class="chat-system">
+              <i class="fa-solid fa-lock"></i> P2P End-to-End Encrypted Room
+            </div>
+          </div>
+          <form id="chatForm" class="chat-input-bar">
+            <input id="chatInput" placeholder="Send a message..." autocomplete="off" />
+            <button type="submit" class="btn-send"><i class="fa-solid fa-paper-plane"></i></button>
+          </form>
+        </div>
+      </aside>
+    </main>
+
+    <!-- নিচের গুগল মিট স্টাইল ভাসমান কন্ট্রোল ডক (Floating Bottom Bar) -->
+    <footer class="bottom-dock">
+      <div class="dock-container">
+        <button id="micBtn" class="dock-btn" disabled title="Toggle Mic">
+          <i class="fa-solid fa-microphone"></i>
+          <span>Mic</span>
+        </button>
+
+        <button id="camBtn" class="dock-btn" disabled title="Toggle Camera">
+          <i class="fa-solid fa-video"></i>
+          <span>Cam</span>
+        </button>
+
+        <button id="shareBtn" class="dock-btn" disabled title="Share Screen">
+          <i class="fa-solid fa-display"></i>
+          <span>Share</span>
+        </button>
+
+        <button id="boardBtn" class="dock-btn" disabled title="Whiteboard">
+          <i class="fa-solid fa-chalkboard"></i>
+          <span>Board</span>
+        </button>
+
+        <button id="handBtn" class="dock-btn" disabled title="Raise Hand">
+          <i class="fa-solid fa-hand"></i>
+          <span>Hand</span>
+        </button>
+
+        <button id="dockShareBtn" class="dock-btn" title="Share Room Link">
+          <i class="fa-solid fa-share-nodes"></i>
+          <span>Invite</span>
+        </button>
+
+        <button id="leaveBtn" class="dock-btn btn-leave" disabled title="Leave Call">
+          <i class="fa-solid fa-phone-slash"></i>
+          <span>Leave</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- স্টুডেন্ট ওয়েটিং লবি মডাল -->
+    <div id="lobbyModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="spinner"></div>
+        <h3>Waiting Room</h3>
+        <p>You have joined the queue. The teacher will admit you in a moment.</p>
+      </div>
+    </div>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
